@@ -16,8 +16,7 @@ Windows에서 텍스트 캐럿 **바로 밑**에 현재 입력 상태를 아주 
 `IMECaret.ini`의 `[Settings]`에 실행 파일 이름을 쉼표(`,`)나 세미콜론(`;`)으로 구분해 적습니다.
 
 ```ini
-ForceApps=
-ExcludeApps=Hwp.exe
+ForceApps=notepad.exe
 ```
 
 - 대소문자는 구분하지 않으며 `.exe`는 생략해도 됩니다(`hwp`, `Hwp.exe` 모두 가능).
@@ -74,7 +73,8 @@ IndicatorTextColor=FFFFFFA5
 EnglishBackgroundColor=FF6262A5
 JapaneseBackgroundColor=62FF62A5
 KoreanBackgroundColor=6262FFA5
-ForceApps=Hwp.exe
+ForceApps=
+ExcludeApps=Hwp.exe
 ```
 
 `IndicatorPosition`에는 `Right`, `Above`, `Below` 중 하나를 사용할 수 있습니다.
