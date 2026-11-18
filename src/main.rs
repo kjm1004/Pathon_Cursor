@@ -28,7 +28,8 @@ mod windows_app {
     use crate::assets::*;
     use crate::config::{Config, IndicatorPosition, RgbaColor};
     use crate::editability::{
-        CaretAnchor, EditabilityDetector, FocusedInputContext, FocusedInputHost,
+        process_executable_name, CaretAnchor, EditabilityDetector, FocusedInputContext,
+        FocusedInputHost,
     };
     use crate::ime::{is_modern_shell_overlay_window, ImeEngine, ImeSnapshot, Validity};
     use crate::win::*;
@@ -263,6 +264,8 @@ mod windows_app {
         active_focused_host: FocusedInputHost,
         active_task_manager_search: bool,
         task_manager_ime_process_id: u32,
+        /// Last `ForceApps` lookup: (process id, listed in ForceApps).
+        force_app_cache: Option<(u32, bool)>,
         task_manager_korean_open: Option<bool>,
     }
 
@@ -330,6 +333,7 @@ mod windows_app {
                 active_focused_host: FocusedInputHost::default(),
                 active_task_manager_search: false,
                 task_manager_ime_process_id: 0,
+                force_app_cache: None,
                 task_manager_korean_open: None,
             }
         }
@@ -555,13 +559,18 @@ mod windows_app {
                 }
             }
             self.set_task_manager_search_active(task_manager_search);
-            let editability = self
-                .editability_detector
-                .focused_input_with_context(input_context);
-            if !editability.accepts_text_input() {
-                self.clear_active_caret();
-                self.hide_badge();
-                return;
+            // Apps listed in ForceApps (e.g. Hwp.exe) skip the editability
+            // check and are shown wherever their caret can be located.
+            let force_app = self.is_force_app_process(input_context.process_id);
+            if !force_app {
+                let editability = self
+                    .editability_detector
+                    .focused_input_with_context(input_context);
+                if !editability.accepts_text_input() {
+                    self.clear_active_caret();
+                    self.hide_badge();
+                    return;
+                }
             }
 
             let shell_overlay = self.active_shell_overlay_bounds(input_context.foreground);
@@ -607,10 +616,14 @@ mod windows_app {
                 ImeKind::Korean | ImeKind::JapaneseHiragana | ImeKind::JapaneseKatakana => 2,
                 ImeKind::English | ImeKind::Unsupported => 1,
             };
-            let Some(anchor) = self
-                .editability_detector
-                .focused_caret_anchor_with_context(input_context, console_cell_span)
-            else {
+            let anchor = if force_app {
+                self.editability_detector
+                    .forced_app_caret_anchor(input_context)
+            } else {
+                self.editability_detector
+                    .focused_caret_anchor_with_context(input_context, console_cell_span)
+            };
+            let Some(anchor) = anchor else {
                 self.clear_active_caret();
                 self.hide_badge();
                 return;
@@ -626,6 +639,21 @@ mod windows_app {
             if self.badge_visible && !self.active_caret_reassert_topmost {
                 self.focus_activation_retries_remaining = 0;
             }
+        }
+
+        fn is_force_app_process(&mut self, process_id: u32) -> bool {
+            if self.config.force_apps.is_empty() || process_id == 0 {
+                return false;
+            }
+            if let Some((cached_id, forced)) = self.force_app_cache {
+                if cached_id == process_id {
+                    return forced;
+                }
+            }
+            let forced = process_executable_name(process_id)
+                .is_some_and(|name| self.config.is_force_app(&name));
+            self.force_app_cache = Some((process_id, forced));
+            forced
         }
 
         unsafe fn schedule_focus_activation_retry_if_needed(&mut self) {
@@ -709,10 +737,14 @@ mod windows_app {
                 ImeKind::Korean | ImeKind::JapaneseHiragana | ImeKind::JapaneseKatakana => 2,
                 ImeKind::English | ImeKind::Unsupported => 1,
             };
-            let Some(anchor) = self
-                .editability_detector
-                .focused_caret_anchor(console_cell_span)
-            else {
+            let context = FocusedInputContext::capture();
+            let anchor = if self.is_force_app_process(context.process_id) {
+                self.editability_detector.forced_app_caret_anchor(context)
+            } else {
+                self.editability_detector
+                    .focused_caret_anchor(console_cell_span)
+            };
+            let Some(anchor) = anchor else {
                 self.refresh_from_active_caret();
                 return false;
             };

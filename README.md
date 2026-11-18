@@ -8,6 +8,20 @@ Windows에서 텍스트 캐럿 **바로 밑**에 현재 입력 상태를 아주 
 - 상태 표시 크기 대폭 축소: 15×15px(글꼴 11px) → **10×10px(글꼴 9px)**, DPI에 맞춰 자동 배율 적용
 - 기본 위치(`Below`)에서 표시를 캐럿 **바로 밑 중앙**(간격 1px)에 배치
 - 영문은 Caps Lock 상태와 관계없이 항상 **`A`**, 한글은 **`가`**로 표시
+- `ForceApps` 설정 추가: 표시가 안 되는 프로그램(예: 한글)을 강제로 표시
+
+### ForceApps (강제 표시 프로그램)
+
+`IMECaret.ini`의 `[Settings]`에 실행 파일 이름을 쉼표(`,`)나 세미콜론(`;`)으로 구분해 적습니다.
+
+```ini
+ForceApps=Hwp.exe
+```
+
+- 대소문자는 구분하지 않으며 `.exe`는 생략해도 됩니다(`hwp`, `Hwp.exe` 모두 가능).
+- 목록에 있는 프로그램이 앞에 있으면 편집 가능 여부를 따지지 않고 커서 위치에 바로 표시합니다.
+- 커서 위치는 Windows 시스템 캐럿 → 접근성(MSAA) 캐럿 → UI Automation 순서로 찾습니다. 셋 다 없으면 표시되지 않습니다.
+- 설정 파일을 고친 뒤에는 프로그램을 다시 시작해야 적용됩니다.
 
 ---
 
@@ -50,6 +64,7 @@ IndicatorTextColor=FFFFFFA5
 EnglishBackgroundColor=FF6262A5
 JapaneseBackgroundColor=62FF62A5
 KoreanBackgroundColor=6262FFA5
+ForceApps=Hwp.exe
 ```
 
 `IndicatorPosition`에는 `Right`, `Above`, `Below` 중 하나를 사용할 수 있습니다.

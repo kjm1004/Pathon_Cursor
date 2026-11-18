@@ -103,6 +103,9 @@ pub struct Config {
     pub english_background_color: RgbaColor,
     pub japanese_background_color: RgbaColor,
     pub korean_background_color: RgbaColor,
+    /// Executable names (lowercase, always ending in `.exe`) whose focused
+    /// caret is shown without requiring positive editability evidence.
+    pub force_apps: Vec<String>,
 }
 
 impl Default for Config {
@@ -117,6 +120,7 @@ impl Default for Config {
             english_background_color: DEFAULT_ENGLISH_BACKGROUND_COLOR,
             japanese_background_color: DEFAULT_JAPANESE_BACKGROUND_COLOR,
             korean_background_color: DEFAULT_KOREAN_BACKGROUND_COLOR,
+            force_apps: Vec::new(),
         }
     }
 }
@@ -178,6 +182,7 @@ impl Config {
                 "koreanbackgroundcolor" => {
                     set_color(&mut config.korean_background_color, raw_value)
                 }
+                "forceapps" => config.force_apps = parse_app_list(raw_value),
                 _ => {}
             }
         }
@@ -197,7 +202,8 @@ impl Config {
                 "IndicatorTextColor={}\r\n",
                 "EnglishBackgroundColor={}\r\n",
                 "JapaneseBackgroundColor={}\r\n",
-                "KoreanBackgroundColor={}\r\n"
+                "KoreanBackgroundColor={}\r\n",
+                "ForceApps={}\r\n"
             ),
             as_ini_bool(self.play_english_sound),
             as_ini_bool(self.play_japanese_sound),
@@ -208,6 +214,7 @@ impl Config {
             self.english_background_color.as_rrggbbaa(),
             self.japanese_background_color.as_rrggbbaa(),
             self.korean_background_color.as_rrggbbaa(),
+            self.force_apps.join(","),
         );
 
         if let Some(parent) = path.parent() {
@@ -215,6 +222,46 @@ impl Config {
         }
         fs::write(path, body)
     }
+}
+
+impl Config {
+    /// Returns true when `executable` (a file name such as `Hwp.exe`, or a
+    /// full path) is listed in `ForceApps`. Comparison ignores ASCII case.
+    pub fn is_force_app(&self, executable: &str) -> bool {
+        if self.force_apps.is_empty() {
+            return false;
+        }
+        let name = executable
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or(executable)
+            .trim()
+            .to_ascii_lowercase();
+        !name.is_empty() && self.force_apps.iter().any(|app| *app == name)
+    }
+}
+
+/// Parses `Hwp.exe, notepad ; Foo.EXE` into `["hwp.exe", "notepad.exe", "foo.exe"]`.
+fn parse_app_list(value: &str) -> Vec<String> {
+    let mut apps = Vec::new();
+    for item in value.split([',', ';']) {
+        let item = item.trim().trim_matches('"').trim();
+        if item.is_empty() {
+            continue;
+        }
+        let mut name = item
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or(item)
+            .to_ascii_lowercase();
+        if !name.ends_with(".exe") {
+            name.push_str(".exe");
+        }
+        if !apps.contains(&name) {
+            apps.push(name);
+        }
+    }
+    apps
 }
 
 fn decode_ini_text(bytes: &[u8]) -> String {
@@ -254,6 +301,34 @@ fn as_ini_bool(value: bool) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn force_apps_are_parsed_normalized_and_matched() {
+        let apps = parse_app_list(" Hwp.exe, notepad ;C:\\Tools\\Foo.EXE,, hwp ");
+        assert_eq!(apps, vec!["hwp.exe", "notepad.exe", "foo.exe"]);
+
+        let mut config = Config::default();
+        assert!(!config.is_force_app("Hwp.exe"));
+        config.force_apps = apps;
+        assert!(config.is_force_app("HWP.EXE"));
+        assert!(config.is_force_app("C:\\Program Files (x86)\\Hnc\\Hwp.exe"));
+        assert!(!config.is_force_app("Hwpviewer.exe"));
+        assert!(!config.is_force_app(""));
+    }
+
+    #[test]
+    fn force_apps_are_saved_and_loaded() {
+        let path = std::env::temp_dir().join(format!(
+            "pathon-cursor-force-apps-{}.ini",
+            std::process::id()
+        ));
+        let mut config = Config::default();
+        config.force_apps = vec!["hwp.exe".into(), "notepad.exe".into()];
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(loaded.force_apps, vec!["hwp.exe", "notepad.exe"]);
+    }
 
     #[test]
     fn defaults_disable_all_sounds_but_keep_each_language_enabled() {

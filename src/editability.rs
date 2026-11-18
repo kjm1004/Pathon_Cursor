@@ -571,6 +571,38 @@ impl EditabilityDetector {
         anchor
     }
 
+    /// Caret lookup for applications listed in `ForceApps`. Editability is
+    /// not verified: the GUI-thread (system) caret is used first, then the
+    /// Active Accessibility caret of the focused window, then UI Automation.
+    pub fn forced_app_caret_anchor(
+        &mut self,
+        context: FocusedInputContext,
+    ) -> Option<CaretAnchor> {
+        self.last_caret_requires_topmost_reassert = false;
+        unsafe {
+            if context.foreground.is_null() {
+                return None;
+            }
+            if let Some(anchor) = win32_caret_anchor(context) {
+                return Some(anchor);
+            }
+            for window in [context.focus, context.foreground] {
+                if window.is_null() {
+                    continue;
+                }
+                if let Some(anchor) = accessible_system_caret_anchor(window)
+                    .filter(|anchor| anchor_matches_window(*anchor, window))
+                {
+                    return Some(anchor);
+                }
+            }
+            match self.uia_focused_caret_anchor(context, false, false, false) {
+                CaretProbeResult::Found(anchor) => Some(anchor),
+                CaretProbeResult::Suppress | CaretProbeResult::Missing => None,
+            }
+        }
+    }
+
     /// Returns whether the last caret belongs to an upper command/search
     /// surface that may finish its own Z-order activation after focus changes.
     pub fn caret_needs_topmost_reassert(&self) -> bool {
@@ -1740,6 +1772,41 @@ unsafe fn console_client_candidates(preferred_process_id: u32) -> Vec<u32> {
         .into_iter()
         .map(|candidate| candidate.1)
         .collect()
+}
+
+/// Returns the executable file name (for example `Hwp.exe`) of a process.
+pub fn process_executable_name(process_id: u32) -> Option<String> {
+    if process_id == 0 {
+        return None;
+    }
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry = PROCESSENTRY32W::default();
+        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+        let mut result = None;
+        if Process32FirstW(snapshot, &mut entry) != FALSE {
+            loop {
+                if entry.th32ProcessID == process_id {
+                    let length = entry
+                        .szExeFile
+                        .iter()
+                        .position(|character| *character == 0)
+                        .unwrap_or(entry.szExeFile.len());
+                    result = Some(String::from_utf16_lossy(&entry.szExeFile[..length]));
+                    break;
+                }
+                entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+                if Process32NextW(snapshot, &mut entry) == FALSE {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+        result
+    }
 }
 
 fn console_process_priority(executable_name: &[u16; 260]) -> u8 {
