@@ -106,6 +106,8 @@ pub struct Config {
     /// Executable names (lowercase, always ending in `.exe`) whose focused
     /// caret is shown without requiring positive editability evidence.
     pub force_apps: Vec<String>,
+    /// Executable names (same normalization) where the indicator is never shown.
+    pub exclude_apps: Vec<String>,
 }
 
 impl Default for Config {
@@ -121,6 +123,7 @@ impl Default for Config {
             japanese_background_color: DEFAULT_JAPANESE_BACKGROUND_COLOR,
             korean_background_color: DEFAULT_KOREAN_BACKGROUND_COLOR,
             force_apps: Vec::new(),
+            exclude_apps: Vec::new(),
         }
     }
 }
@@ -183,6 +186,7 @@ impl Config {
                     set_color(&mut config.korean_background_color, raw_value)
                 }
                 "forceapps" => config.force_apps = parse_app_list(raw_value),
+                "excludeapps" => config.exclude_apps = parse_app_list(raw_value),
                 _ => {}
             }
         }
@@ -203,7 +207,8 @@ impl Config {
                 "EnglishBackgroundColor={}\r\n",
                 "JapaneseBackgroundColor={}\r\n",
                 "KoreanBackgroundColor={}\r\n",
-                "ForceApps={}\r\n"
+                "ForceApps={}\r\n",
+                "ExcludeApps={}\r\n"
             ),
             as_ini_bool(self.play_english_sound),
             as_ini_bool(self.play_japanese_sound),
@@ -215,6 +220,7 @@ impl Config {
             self.japanese_background_color.as_rrggbbaa(),
             self.korean_background_color.as_rrggbbaa(),
             self.force_apps.join(","),
+            self.exclude_apps.join(","),
         );
 
         if let Some(parent) = path.parent() {
@@ -228,16 +234,27 @@ impl Config {
     /// Returns true when `executable` (a file name such as `Hwp.exe`, or a
     /// full path) is listed in `ForceApps`. Comparison ignores ASCII case.
     pub fn is_force_app(&self, executable: &str) -> bool {
-        if self.force_apps.is_empty() {
-            return false;
-        }
+        app_list_contains(&self.force_apps, executable)
+    }
+
+    /// Returns true when `executable` is listed in `ExcludeApps`.
+    pub fn is_exclude_app(&self, executable: &str) -> bool {
+        app_list_contains(&self.exclude_apps, executable)
+    }
+}
+
+fn app_list_contains(apps: &[String], executable: &str) -> bool {
+    if apps.is_empty() {
+        return false;
+    }
+    {
         let name = executable
             .rsplit(['\\', '/'])
             .next()
             .unwrap_or(executable)
             .trim()
             .to_ascii_lowercase();
-        !name.is_empty() && self.force_apps.iter().any(|app| *app == name)
+        !name.is_empty() && apps.iter().any(|app| *app == name)
     }
 }
 
@@ -324,10 +341,14 @@ mod tests {
         ));
         let mut config = Config::default();
         config.force_apps = vec!["hwp.exe".into(), "notepad.exe".into()];
+        config.exclude_apps = vec!["foo.exe".into()];
         config.save(&path).unwrap();
         let loaded = Config::load(&path);
         let _ = std::fs::remove_file(&path);
         assert_eq!(loaded.force_apps, vec!["hwp.exe", "notepad.exe"]);
+        assert_eq!(loaded.exclude_apps, vec!["foo.exe"]);
+        assert!(loaded.is_exclude_app("FOO.exe"));
+        assert!(!loaded.is_exclude_app("hwp.exe"));
     }
 
     #[test]

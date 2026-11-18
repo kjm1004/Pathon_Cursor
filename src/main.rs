@@ -264,8 +264,8 @@ mod windows_app {
         active_focused_host: FocusedInputHost,
         active_task_manager_search: bool,
         task_manager_ime_process_id: u32,
-        /// Last `ForceApps` lookup: (process id, listed in ForceApps).
-        force_app_cache: Option<(u32, bool)>,
+        /// Last app-list lookup: (process id, ForceApps, ExcludeApps).
+        force_app_cache: Option<(u32, bool, bool)>,
         task_manager_korean_open: Option<bool>,
     }
 
@@ -561,7 +561,13 @@ mod windows_app {
             self.set_task_manager_search_active(task_manager_search);
             // Apps listed in ForceApps (e.g. Hwp.exe) skip the editability
             // check and are shown wherever their caret can be located.
-            let force_app = self.is_force_app_process(input_context.process_id);
+            let (force_app, exclude_app) = self.app_list_flags(input_context.process_id);
+            if exclude_app {
+                // ExcludeApps (e.g. Hwp.exe): never show the indicator.
+                self.clear_active_caret();
+                self.hide_badge();
+                return;
+            }
             if !force_app {
                 let editability = self
                     .editability_detector
@@ -641,19 +647,23 @@ mod windows_app {
             }
         }
 
-        fn is_force_app_process(&mut self, process_id: u32) -> bool {
-            if self.config.force_apps.is_empty() || process_id == 0 {
-                return false;
+        /// Returns (listed in ForceApps, listed in ExcludeApps) for a process.
+        fn app_list_flags(&mut self, process_id: u32) -> (bool, bool) {
+            if process_id == 0
+                || (self.config.force_apps.is_empty() && self.config.exclude_apps.is_empty())
+            {
+                return (false, false);
             }
-            if let Some((cached_id, forced)) = self.force_app_cache {
+            if let Some((cached_id, forced, excluded)) = self.force_app_cache {
                 if cached_id == process_id {
-                    return forced;
+                    return (forced, excluded);
                 }
             }
-            let forced = process_executable_name(process_id)
-                .is_some_and(|name| self.config.is_force_app(&name));
-            self.force_app_cache = Some((process_id, forced));
-            forced
+            let name = process_executable_name(process_id).unwrap_or_default();
+            let forced = self.config.is_force_app(&name);
+            let excluded = self.config.is_exclude_app(&name);
+            self.force_app_cache = Some((process_id, forced, excluded));
+            (forced, excluded)
         }
 
         unsafe fn schedule_focus_activation_retry_if_needed(&mut self) {
@@ -738,7 +748,12 @@ mod windows_app {
                 ImeKind::English | ImeKind::Unsupported => 1,
             };
             let context = FocusedInputContext::capture();
-            let anchor = if self.is_force_app_process(context.process_id) {
+            let (force_app, exclude_app) = self.app_list_flags(context.process_id);
+            if exclude_app {
+                self.refresh_from_active_caret();
+                return false;
+            }
+            let anchor = if force_app {
                 self.editability_detector.forced_app_caret_anchor(context)
             } else {
                 self.editability_detector
