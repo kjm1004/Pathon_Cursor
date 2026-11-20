@@ -3,6 +3,15 @@
 [mattisonit/IME-Caret](https://github.com/mattisonit/IME-Caret) 2.5(MIT)를 기반으로 재개발한 프로젝트입니다.
 Windows에서 텍스트 캐럿 **바로 밑**에 현재 입력 상태를 아주 작게 표시합니다.
 
+## 다운로드
+
+빌드된 실행 파일은 [`release`](release) 폴더에 있습니다.
+
+- [`PathonCursor-v1.0.0-win64.zip`](release/PathonCursor-v1.0.0-win64.zip): 실행 파일, 설정 파일, 효과음 포함 (추천)
+- [`IMECaret.exe`](release/IMECaret.exe): 실행 파일만
+
+압축을 풀고 `IMECaret.exe`를 실행하면 됩니다. Windows 10/11 x64 전용이며, 서명되지 않은 파일이라 SmartScreen 경고가 나오면 **추가 정보 → 실행**을 누르세요.
+
 ## Pathon Cursor 변경 사항
 
 - 상태 표시 크기 대폭 축소: 15×15px(글꼴 11px) → **10×10px(글꼴 9px)**, DPI에 맞춰 자동 배율 적용
